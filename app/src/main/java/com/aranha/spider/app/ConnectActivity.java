@@ -1,7 +1,6 @@
 package com.aranha.spider.app;
 
 import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -26,20 +25,11 @@ import com.example.spider.app.R;
 public class ConnectActivity extends ActionBarActivity implements View.OnClickListener {
     private final int REQUEST_ENABLE_BLUETOOTH = 1;
 
-    private BluetoothAdapter mBluetoothAdapter;
-
-    private BluetoothDevice device;
-    private Button connectButton, refreshButton, manualConnectButton;
-    private TextView connectedTextView;
+    private Button mConnectButton, mRefreshButton, mManualConnectButton;
+    private TextView mConnectedTextView;
 
     BluetoothService mBluetoothService;
     boolean mBound = false;
-
-
-    /**
-     * The thread that handles the in/out socket to the spider.
-     */
-    public BluetoothSpiderConnectionThread spiderConnectionThread;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,21 +38,21 @@ public class ConnectActivity extends ActionBarActivity implements View.OnClickLi
 
         // Get the UI Resources from the xml
         //
-        connectButton = (Button)findViewById(R.id.connectButton);
-        connectButton.setOnClickListener(this);
-        connectButton.setEnabled(false);
-        manualConnectButton = (Button)findViewById(R.id.manualConnectButton);
-        manualConnectButton.setOnClickListener(this);
-        connectedTextView = (TextView)findViewById(R.id.connectedTextView);
+        mConnectButton = (Button)findViewById(R.id.connectButton);
+        mConnectButton.setOnClickListener(this);
+        mConnectButton.setEnabled(false);
+        mManualConnectButton = (Button)findViewById(R.id.manualConnectButton);
+        mManualConnectButton.setOnClickListener(this);
+        mConnectedTextView = (TextView)findViewById(R.id.connectedTextView);
 
-        refreshButton = (Button)findViewById(R.id.refresh);
-        refreshButton.setOnClickListener(this);
+        mRefreshButton = (Button)findViewById(R.id.refresh);
+        mRefreshButton.setOnClickListener(this);
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+        BluetoothAdapter mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
 
         if (mBluetoothAdapter == null) {
             // Device does not support Bluetooth
@@ -76,6 +66,7 @@ public class ConnectActivity extends ActionBarActivity implements View.OnClickLi
             }
         }
     }
+
     @Override
     protected void onStop() {
         super.onStop();
@@ -86,14 +77,15 @@ public class ConnectActivity extends ActionBarActivity implements View.OnClickLi
         }
     }
 
-
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         switch (requestCode) {
             case REQUEST_ENABLE_BLUETOOTH:
-                if(resultCode == 1) // User pressed 'Allow' when asked to activate bluetooth.
+                if(resultCode == 1) { // User pressed 'Allow' when asked to activate bluetooth.
                     startBluetoothService();
-                //else close application
+                } else {
+                    //TODO: close application
+                }
                 break;
         }
     }
@@ -124,22 +116,25 @@ public class ConnectActivity extends ActionBarActivity implements View.OnClickLi
         }
     };
 
+    /**
+     * Receives all the messages from the Bluetooth service
+     */
     final Messenger mBluetoothServiceMessenger = new Messenger(new BluetoothServiceMessageHandler());
     class BluetoothServiceMessageHandler extends Handler {
         @Override
         public void handleMessage(Message msg) {
             switch (msg.what) {
                 case BluetoothService.MSG_RASPBERRYPI_FOUND:
-                    connectButton.setEnabled(true);
+                    mConnectButton.setEnabled(true);
                     break;
 
                 case BluetoothService.MSG_CONNECTING_FAILED:
-                    connectButton.setEnabled(false);
+                    mConnectButton.setEnabled(false);
                     break;
 
                 case BluetoothService.MSG_CONNECTED_TO_RASPBERRYPI:
-                    connectedTextView.setText("Connected!");
-                    connectButton.setEnabled(false);
+                    mConnectedTextView.setText("Connected!");
+                    mConnectButton.setEnabled(false);
 
                     Intent intent =  new Intent(ConnectActivity.this, MainActivity.class);
                     startActivity(intent);
@@ -153,7 +148,7 @@ public class ConnectActivity extends ActionBarActivity implements View.OnClickLi
 
         if(view.getId() == R.id.connectButton) {
             mBluetoothService.connect();
-            connectButton.setEnabled(false);
+            mConnectButton.setEnabled(false);
         }
         else if(view.getId() == R.id.refresh) {
             mBluetoothService.discoverBluetoothDevices();

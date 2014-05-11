@@ -29,21 +29,30 @@ public class BluetoothService extends Service {
 
     public static final int MSG_READ = 4;
 
-    private final IBinder mBinder = new BluetoothBinder();
-    private Messenger messageReceiver;
+    /**
+     * The activity which is currently connected to this service can receive
+     * messages by providing a Messenger as extra data when binding.
+     */
+    private Messenger mMessageReceiver;
+
 
     /**
      * The binder which clients use to communicate with this bluetooth service.
      */
+    private final IBinder mBinder = new BluetoothBinder();
     public class BluetoothBinder extends Binder {
         BluetoothService getService() {
             return BluetoothService.this;
         }
     }
 
+    /**
+     * When an activity binds to this service this gets called.
+     * @return The this instance.
+     */
     @Override
     public IBinder onBind(Intent intent) {
-        this.messageReceiver = intent.getParcelableExtra("messageReceiver");
+        this.mMessageReceiver = intent.getParcelableExtra("mMessageReceiver");
         return mBinder;
     }
 
@@ -53,7 +62,7 @@ public class BluetoothService extends Service {
 
     private boolean isReadyToConnect = false;
     private BluetoothAdapter mBluetoothAdapter;
-    private BluetoothDevice device;
+    private BluetoothDevice mBluetoothDevice;
 
     @Override
     public void onCreate() {
@@ -71,7 +80,7 @@ public class BluetoothService extends Service {
 
 
     /**
-     * Every time a bluetooth device is found the onReceive() function gets executed.
+     * Every time a bluetooth mBluetoothDevice is found the onReceive() function gets executed.
      */
     final BroadcastReceiver mBluetoothReceiver = new BroadcastReceiver() {
         final List<String> ss = new ArrayList<String>();
@@ -95,7 +104,7 @@ public class BluetoothService extends Service {
      * @param device Device with the Raspberry Pi MAC address
      */
     public void onRaspberryPiFound(BluetoothDevice device) {
-        this.device = device;
+        this.mBluetoothDevice = device;
         mBluetoothAdapter.cancelDiscovery();
         isReadyToConnect = true;
         sendMessageToActivity(MSG_RASPBERRYPI_FOUND);
@@ -104,7 +113,7 @@ public class BluetoothService extends Service {
     /**
      * The message handler. This receives all the incoming messages from the Raspberry Pi.
      */
-    final Messenger mBluetoothConnecterMessenger = new Messenger(new BluetoothConnectionMessenger());
+    final Messenger mBluetoothConnectorMessenger = new Messenger(new BluetoothConnectionMessenger());
     class BluetoothConnectionMessenger extends Handler {
         @Override
         public void handleMessage(Message msg) {
@@ -129,10 +138,9 @@ public class BluetoothService extends Service {
 
     private void sendMessageToActivity(int message) {
 
-        if(messageReceiver != null) {
-            Message msg = Message.obtain(null, message, 0,0 );
+        if(mMessageReceiver != null) {
             try {
-                messageReceiver.send(msg);
+                mMessageReceiver.send(Message.obtain(null, message, 0,0 ));
             } catch (RemoteException e) {
                 e.printStackTrace();
             }
@@ -160,7 +168,7 @@ public class BluetoothService extends Service {
     }
 
     public void connect() {
-        BluetoothThread btThread = new BluetoothThread(device, mBluetoothConnecterMessenger);
+        BluetoothThread btThread = new BluetoothThread(mBluetoothDevice, mBluetoothConnectorMessenger);
         btThread.start();
     }
 
