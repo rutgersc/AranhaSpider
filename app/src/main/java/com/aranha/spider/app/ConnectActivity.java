@@ -2,15 +2,16 @@ package com.aranha.spider.app;
 
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
-import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Message;
+import android.os.Messenger;
 import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
-import android.util.Base64;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -19,20 +20,21 @@ import android.widget.TextView;
 
 import com.example.spider.app.R;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
  * The activity which is used to connect to the Raspberry Pi.
  */
 public class ConnectActivity extends ActionBarActivity implements View.OnClickListener {
-
     private final int REQUEST_ENABLE_BLUETOOTH = 1;
+
     private BluetoothAdapter mBluetoothAdapter;
 
     private BluetoothDevice device;
     private Button connectButton, refreshButton, manualConnectButton;
     private TextView connectedTextView;
+
+    BluetoothService mBluetoothService;
+    boolean mBound = false;
+
 
     /**
      * The thread that handles the in/out socket to the spider.
@@ -55,81 +57,12 @@ public class ConnectActivity extends ActionBarActivity implements View.OnClickLi
 
         refreshButton = (Button)findViewById(R.id.refresh);
         refreshButton.setOnClickListener(this);
+    }
 
-        // Enable Bluetoef
-        //
-        IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-        registerReceiver(mReceiver, filter); // Don't forget to unregister during onDestroy
+    @Override
+    protected void onStart() {
+        super.onStart();
         mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-        enableBluetooth();
-    }
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        unregisterReceiver(mReceiver);
-    }
-
-    /**
-     * Every time a bluetooth device is found the onReceive() function gets executed.
-     */
-    final BroadcastReceiver mReceiver = new BroadcastReceiver() {
-        final List<String> ss = new ArrayList<String>();
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            // When discovery finds a device
-            if (BluetoothDevice.ACTION_FOUND.equals(action)) {
-                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE); // Get the BluetoothDevice object from the Intent
-                ss.add(device.getName() + "\n" + device.getAddress()); // Add the name and address to an array adapter to show in a ListView
-                System.out.println(device.getName() + "\n" + device.getAddress());
-
-                if(device.getName()!= null && device.getName().equals("raspberrypi-0")) {
-                    onRaspberryPiFound(device);
-                }
-            }
-        }
-    };
-
-    /**
-     * Connect to the Raspberry Pi with a known MAC address.
-     * @param MACAddress string
-     */
-    private void manualConnect(String MACAddress) {
-        BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(MACAddress);
-        onRaspberryPiFound(device);
-    }
-
-    /**
-     * The message handler. This receives all the incoming messages from the Raspberry Pi.
-     */
-    Handler mHandler = new Handler(){
-        @Override
-        public void handleMessage(Message msg) {
-            switch(msg.what) {
-                case BluetoothSpiderConnectionThread.MESSAGE_READ:
-                    String in = new String(Base64.decode((byte[])msg.obj, Base64.NO_PADDING));
-                    System.out.println("Received: " + in);
-                    break;
-            }
-        }
-    };
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        switch (requestCode) {
-            case REQUEST_ENABLE_BLUETOOTH:
-                if(resultCode == 1) // User pressed 'Allow' when asked to activate bluetooth.
-                    discoverBluetoothDevices();
-                else
-                    enableBluetooth(); // Keep asking to enable bluetooth :>:>:>
-                break;
-        }
-    }
-
-    /**
-     * Enables bluetooth if it's not already on yet.
-     * Also will start to look for bluetooth devices.
-     */
-    public void enableBluetooth(){
 
         if (mBluetoothAdapter == null) {
             // Device does not support Bluetooth
@@ -139,65 +72,94 @@ public class ConnectActivity extends ActionBarActivity implements View.OnClickLi
                 Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
                 startActivityForResult(enableBtIntent, REQUEST_ENABLE_BLUETOOTH);
             } else {
-                discoverBluetoothDevices();
+                startBluetoothService();
             }
         }
     }
+    @Override
+    protected void onStop() {
+        super.onStop();
 
-    public void discoverBluetoothDevices() {
-        mBluetoothAdapter.cancelDiscovery();
-        mBluetoothAdapter.startDiscovery();
+        if (mBound) { // Unbind from the service
+            unbindService(mConnection);
+            mBound = false;
+        }
+    }
+
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        switch (requestCode) {
+            case REQUEST_ENABLE_BLUETOOTH:
+                if(resultCode == 1) // User pressed 'Allow' when asked to activate bluetooth.
+                    startBluetoothService();
+                //else close application
+                break;
+        }
+    }
+
+    public void startBluetoothService() {
+        Intent intent = new Intent(this, BluetoothService.class);
+        intent.putExtra("messageReceiver", mBluetoothServiceMessenger);
+        bindService(intent, mConnection, Context.BIND_AUTO_CREATE);
     }
 
     /**
-     * Gets called whenever the Raspberry Pi is found via bluetooth.
-     * @param device Device with the Raspberry Pi MAC address
+     * Used to connect to the BluetoothService
      */
-    public void onRaspberryPiFound(BluetoothDevice device) {
-        this.device = device;
-        mBluetoothAdapter.cancelDiscovery();
-        connectButton.setEnabled(true);
-    }
+    private ServiceConnection mConnection = new ServiceConnection() {
 
-    /**
-     * Gets called when the app is connected and paired with the spider.
-     * @param connectionThread The thread with the in/out sockets.
-     */
-    public void onConnectedWithRaspberryPi(BluetoothSpiderConnectionThread connectionThread) {
-        connectedTextView.setText("Connected!");
-        connectButton.setEnabled(false);
-    }
+        @Override
+        public void onServiceConnected(ComponentName className, IBinder service) {
+            // Get the bluetoothService class via BluetoothBinder.
+            mBluetoothService = ((BluetoothService.BluetoothBinder) service).getService();
+            mBluetoothService.discoverBluetoothDevices();
+            mBound = true;
+        }
 
-    /**
-     * BluetoothThread.java failed to connect to the Raspberry Pi
-     */
-    public void onConnectingFailed() {
-        this.device = null;
-        connectButton.setEnabled(false);
-        mBluetoothAdapter.startDiscovery();
-    }
+        @Override
+        public void onServiceDisconnected(ComponentName arg0) {
+            mBound = false;
+            System.out.println("Bluetooth service disconnected? :/");
+        }
+    };
 
-    /**
-     * Opens the main activity
-     */
-    public void onBluetoothConnectionEstablished() {
-        Intent intent =  new Intent(this, MainActivity.class);
-        startActivity(intent);
+    final Messenger mBluetoothServiceMessenger = new Messenger(new BluetoothServiceMessageHandler());
+    class BluetoothServiceMessageHandler extends Handler {
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+                case BluetoothService.MSG_RASPBERRYPI_FOUND:
+                    connectButton.setEnabled(true);
+                    break;
+
+                case BluetoothService.MSG_CONNECTING_FAILED:
+                    connectButton.setEnabled(false);
+                    break;
+
+                case BluetoothService.MSG_CONNECTED_TO_RASPBERRYPI:
+                    connectedTextView.setText("Connected!");
+                    connectButton.setEnabled(false);
+
+                    Intent intent =  new Intent(ConnectActivity.this, MainActivity.class);
+                    startActivity(intent);
+                    break;
+            }
+        }
     }
 
     @Override
     public void onClick(View view) {
 
         if(view.getId() == R.id.connectButton) {
-            BluetoothThread btThread = new BluetoothThread(this, device, mHandler);
-            btThread.start();
+            mBluetoothService.connect();
             connectButton.setEnabled(false);
         }
         else if(view.getId() == R.id.refresh) {
-            discoverBluetoothDevices();
+            mBluetoothService.discoverBluetoothDevices();
         }
         else if(view.getId() == R.id.manualConnectButton) {
-            manualConnect("00:15:83:6A:31:B7");
+            mBluetoothService.manualConnect("00:15:83:6A:31:B7");
         }
     }
 

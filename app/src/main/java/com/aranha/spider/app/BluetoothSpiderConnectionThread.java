@@ -1,7 +1,9 @@
 package com.aranha.spider.app;
 
 import android.bluetooth.BluetoothSocket;
-import android.os.Handler;
+import android.os.Message;
+import android.os.Messenger;
+import android.os.RemoteException;
 import android.util.Base64;
 
 import java.io.IOException;
@@ -13,27 +15,22 @@ import java.io.OutputStream;
  */
 public class BluetoothSpiderConnectionThread extends Thread {
 
-    public static final int MESSAGE_READ = 9998;
-
     private final BluetoothSocket mmSocket;
     private final InputStream mmInStream;
     private final OutputStream mmOutStream;
 
-    private final ConnectActivity connectActivity;
-    private final Handler mHandler;
+    private final Messenger mMessenger;
 
     /**
      * Gets an already connected socket and sets up the communication.
-     * @param connectActivity The main activity.
      * @param socket A connected socket.
-     * @param handler Message handler.
+     * @param messenger Message handler.
      */
-    public BluetoothSpiderConnectionThread(ConnectActivity connectActivity, BluetoothSocket socket, Handler handler) {
+    public BluetoothSpiderConnectionThread(BluetoothSocket socket, Messenger messenger) {
         mmSocket = socket;
         InputStream tmpIn = null;
         OutputStream tmpOut = null;
-        mHandler = handler;
-        this.connectActivity = connectActivity;
+        mMessenger = messenger;
 
         try {
             // Get the input and output streams, using temp objects because member streams are final
@@ -44,8 +41,11 @@ public class BluetoothSpiderConnectionThread extends Thread {
         mmInStream = tmpIn;
         mmOutStream = tmpOut;
 
-        connectActivity.onConnectedWithRaspberryPi(this);
-
+        try {
+            mMessenger.send(Message.obtain(null, BluetoothService.MSG_CONNECTED_TO_RASPBERRYPI));
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
 
         //
         //  !!!!!!!!!!!!!!!!!!!!!!!!!!! TEST TEST TEST
@@ -66,8 +66,14 @@ public class BluetoothSpiderConnectionThread extends Thread {
             try {
                 // Read from the InputStream
                 bytes = mmInStream.read(buffer);
-                // Send the obtained bytes to the UI activity
-                mHandler.obtainMessage(MESSAGE_READ, bytes, -1, buffer).sendToTarget();
+
+                // Send the obtained bytes to the bluetooth service
+                try {
+                    mMessenger.send(Message.obtain(null, BluetoothService.MSG_READ, bytes, -1, buffer));
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+
             } catch (IOException e) {
                 System.out.println("In stream Exception!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
                 break;

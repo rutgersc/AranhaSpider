@@ -2,7 +2,9 @@ package com.aranha.spider.app;
 
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
-import android.os.Handler;
+import android.os.Message;
+import android.os.Messenger;
+import android.os.RemoteException;
 
 import java.io.IOException;
 import java.util.UUID;
@@ -15,15 +17,13 @@ public class BluetoothThread extends Thread {
     private UUID MY_UUID = UUID.randomUUID();
     private final BluetoothSocket mmSocket;
     private final BluetoothDevice mmDevice;
-    private final ConnectActivity connectActivity;
 
-    private final Handler mHandler;
+    private final Messenger mMessenger;
 
-    public BluetoothThread(ConnectActivity connectActivity, BluetoothDevice device, Handler handler) {
+    public BluetoothThread(BluetoothDevice device, Messenger messenger) {
         BluetoothSocket tmp = null;
         mmDevice = device;
-        mHandler = handler;
-        this.connectActivity = connectActivity;
+        mMessenger = messenger;
 
         // Get a BluetoothSocket to connect with the given BluetoothDevice
         try {
@@ -43,12 +43,18 @@ public class BluetoothThread extends Thread {
             } else {
                 // Do work to manage the connection (in a separate thread)
                 System.out.println("Starting spin connection thread. Socket connected: " + mmSocket.isConnected());
-                Thread bluetoothToSpiderThread = new BluetoothSpiderConnectionThread(connectActivity, mmSocket, mHandler);
+                Thread bluetoothToSpiderThread = new BluetoothSpiderConnectionThread(mmSocket, mMessenger);
                 bluetoothToSpiderThread.start();
             }
 
         } catch (IOException closeException) {
-            connectActivity.onConnectingFailed(); // Call fail method of the main activity
+
+            try {
+                mMessenger.send(Message.obtain(null, BluetoothService.MSG_CONNECTING_FAILED));
+            } catch (RemoteException e) {
+                e.printStackTrace();
+            }
+
             System.out.println("!!!!!!!! Socket is NOT connected !!!!!!!! " + mmSocket.isConnected());
         }
     }
